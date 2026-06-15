@@ -71,37 +71,69 @@ The AI features work in two modes:
 
 ---
 
-## Full System Architecture
+## System Architecture
 
 This frontend is one of **three services** in the submission:
 
-```
-Frontend (this)  ←→  CRM Backend API  ──POST /send──►  Channel Service
-                          ▲                                    │
-                          └──── POST /api/receipts ◄───────────┘
-                                   (async callbacks)
-```
-
-| Repo | Description |
+| Repo | Role |
 |---|---|
-| **xeno-crm** (this) | Vite frontend — AI Composer, Agent, live dashboard |
-| **xeno-crm-backend** | Express CRM API — campaigns, segments, receipts webhook |
-| **xeno-channel-service** | Stub channel — simulates async delivery + fires callbacks |
+| **[xeno-crm](https://github.com/gaayathri-code-monk/xeno-crm)** | Vite frontend — AI Composer, Agent, live dashboard |
+| **[xeno-crm-backend](https://github.com/gaayathri-code-monk/xeno-crm-backend)** | Express CRM API — campaigns, segments, receipts webhook |
+| **[xeno-channel-service](https://github.com/gaayathri-code-monk/xeno-channel-service)** | Stub channel — simulates async delivery + fires callbacks |
 
-### Async Channel Callback Loop
-The channel service is a separate HTTP service that accepts messages, responds 202 immediately, then fires async POST callbacks to the CRM's `/api/receipts` at realistic intervals — mirroring real providers (WhatsApp Business API webhooks, Twilio StatusCallback, SendGrid Events). Each channel has its own delivery rate and timing profile.
+```mermaid
+flowchart TB
+    subgraph FE["🖥️  Frontend  (xeno-crm · Vite)"]
+        direction TB
+        UI["Dashboard · Shoppers · Segments"]
+        Composer["✦ AI Composer"]
+        Agent["⬡ AI Agent (chat)"]
+        Analytics["◇ Analytics & Funnel"]
+    end
 
-### Idempotent Receipts
-The CRM deduplicates callbacks using a `Set<commId:status>` — the same receipt event is a no-op on replay. At scale: Redis `SETNX`.
+    subgraph BE["🟣  CRM Backend  (xeno-crm-backend · Express :3000)"]
+        direction TB
+        CR["/api/customers"]
+        SR["/api/segments · segmentEngine"]
+        CAMP["/api/campaigns · staggered dispatch"]
+        REC["/api/receipts · idempotent webhook"]
+        ANA["/api/analytics"]
+    end
 
-### Staggered Dispatch
-Campaigns dispatch messages at 70ms/shopper to avoid thundering-herd on the channel service. At scale: SQS FIFO with a token-bucket producer.
+    subgraph CH["📡  Channel Service  (xeno-channel-service · Express :4000)"]
+        direction TB
+        SEND["/send  →  202 Accepted"]
+        SIM["simulate.js\nper-channel delivery profiles\nWhatsApp 95% · SMS 88%\nEmail 82% · RCS 79%"]
+    end
 
-### Seeded Data
-Shoppers are generated with a seeded PRNG — deterministic, realistic, no external data needed.
+    subgraph AI["🤖  Anthropic Claude"]
+        CLAUDE["claude-sonnet-4-6\nMessage Writer · Segment Picker · Agent"]
+    end
 
-### Module Structure
-Each concern is in its own file — `channelService.js` doesn't know about campaigns, `aiService.js` doesn't know about UI. `main.js` wires them with shared state.
+    FE -->|"REST API calls"| BE
+    CAMP -->|"POST /send\n{ commId, channel, recipient, message, callbackUrl }"| SEND
+    SEND --> SIM
+    SIM -->|"POST /api/receipts\n{ commId, status }\nasync · per-event · retried"| REC
+    REC -->|"dedup Set + state update"| CAMP
+
+    Composer & Agent <-->|"fetch (browser)"| CLAUDE
+
+    style FE fill:#1a1040,stroke:#8B5CF6,color:#e2e8f0
+    style BE fill:#0f1a20,stroke:#2DD4BF,color:#e2e8f0
+    style CH fill:#1a1200,stroke:#F59E0B,color:#e2e8f0
+    style AI fill:#1a0a20,stroke:#D946EF,color:#e2e8f0
+```
+
+### Key Design Decisions
+
+| Decision | Implementation | At Scale |
+|---|---|---|
+| **Async callback loop** | Channel service fires POST to `/api/receipts` after random delay | Real provider webhooks (Twilio, WhatsApp Business API) |
+| **Idempotent receipts** | `Set<commId:status>` deduplicates replays | Redis `SETNX` |
+| **Staggered dispatch** | 70ms gap between messages to channel service | SQS FIFO + token-bucket producer |
+| **Immediate 202 on /send** | Channel service never blocks CRM | Enqueue to async worker |
+| **ACK before DB write** | `/api/receipts` responds before applying state | Kafka offset commit post-process |
+| **Declarative segment filters** | `{ minSpend, minOrders, maxDaysSinceLast }` objects | Compile to SQL `WHERE` clause |
 
 ---
 
