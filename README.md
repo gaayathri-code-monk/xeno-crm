@@ -1,3 +1,7 @@
+🔗 **Live Demo:** https://lighthearted-chebakia-fb4580.netlify.app
+
+---
+
 # Xeno — AI-Native Mini CRM
 
 > Engineering take-home assignment submission by **Gaayathri Muralidharan**
