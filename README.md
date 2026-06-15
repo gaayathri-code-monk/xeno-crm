@@ -71,19 +71,37 @@ The AI features work in two modes:
 
 ---
 
-## Architecture Decisions
+## Full System Architecture
+
+This frontend is one of **three services** in the submission:
+
+```
+Frontend (this)  ←→  CRM Backend API  ──POST /send──►  Channel Service
+                          ▲                                    │
+                          └──── POST /api/receipts ◄───────────┘
+                                   (async callbacks)
+```
+
+| Repo | Description |
+|---|---|
+| **xeno-crm** (this) | Vite frontend — AI Composer, Agent, live dashboard |
+| **xeno-crm-backend** | Express CRM API — campaigns, segments, receipts webhook |
+| **xeno-channel-service** | Stub channel — simulates async delivery + fires callbacks |
 
 ### Async Channel Callback Loop
-The channel service is modeled as a proper async event chain — each message gets independent delivery, open, read, click, and conversion events with randomized delays. This mirrors how real messaging providers work (webhooks fire asynchronously, often out of order).
+The channel service is a separate HTTP service that accepts messages, responds 202 immediately, then fires async POST callbacks to the CRM's `/api/receipts` at realistic intervals — mirroring real providers (WhatsApp Business API webhooks, Twilio StatusCallback, SendGrid Events). Each channel has its own delivery rate and timing profile.
+
+### Idempotent Receipts
+The CRM deduplicates callbacks using a `Set<commId:status>` — the same receipt event is a no-op on replay. At scale: Redis `SETNX`.
+
+### Staggered Dispatch
+Campaigns dispatch messages at 70ms/shopper to avoid thundering-herd on the channel service. At scale: SQS FIFO with a token-bucket producer.
 
 ### Seeded Data
-Shoppers are generated with a seeded PRNG so data is realistic but deterministic — same 60 shoppers every run.
-
-### No Backend
-For this assignment scope, all state lives in memory in the browser. At production scale, I'd add: a message queue for the callback loop, idempotent receipt processing, and a proper backend with persistent storage.
+Shoppers are generated with a seeded PRNG — deterministic, realistic, no external data needed.
 
 ### Module Structure
-Each concern is in its own file — channelService.js doesn't know about campaigns, aiService.js doesn't know about UI. The main.js wires them together with shared state.
+Each concern is in its own file — `channelService.js` doesn't know about campaigns, `aiService.js` doesn't know about UI. `main.js` wires them with shared state.
 
 ---
 
