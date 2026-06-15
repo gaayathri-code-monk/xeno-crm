@@ -1,6 +1,6 @@
 # Xeno — AI-Native Mini CRM
 
-> Engineering take-home assignment submission by **Jagadeesh Muralidharan**
+> Engineering take-home assignment submission by **Gaayathri Muralidharan**
 
 A full AI-native Mini CRM for helping D2C brands reach their shoppers intelligently — with behavioral segmentation, AI-powered campaign composition, an async channel service simulation, and a conversational AI agent.
 
@@ -31,17 +31,17 @@ xeno-crm/
 ├── public/
 │   └── favicon.svg
 └── src/
-    ├── main.js                 # App bootstrap, state, routing
+    ├── main.js                 # App bootstrap, state, routing, event wiring
     ├── styles/
-    │   └── main.css            # Full design system
+    │   └── main.css            # Full design system (CSS variables, components)
     ├── data/
-    │   └── shoppers.js         # 60 shoppers, segments, campaign factory
+    │   └── shoppers.js         # 60 shoppers, 6 segments, campaign factory
     ├── utils/
-    │   ├── channelService.js   # Async stub channel + receipt callbacks
+    │   ├── channelService.js   # Async stub channel + receipt callback loop
     │   ├── aiService.js        # Anthropic API + smart fallback responses
-    │   └── ui.js               # Badges, avatars, notifications, modals
+    │   └── ui.js               # Badges, avatars, score rings, notifications
     └── components/
-        ├── Dashboard.js        # KPIs, pipeline viz, channel chart
+        ├── Dashboard.js        # KPIs, pipeline viz, channel delivery chart
         ├── Pages.js            # Shoppers, Segments, Campaigns, Analytics
         └── Composer.js         # AI Composer, AI Agent, modals
 ```
@@ -77,11 +77,11 @@ This frontend is one of **three services** in the submission:
 
 | Repo | Role |
 |---|---|
-| **[xeno-crm](https://github.com/gaayathri-code-monk/xeno-crm)** | Vite frontend — AI Composer, Agent, live dashboard |
+| **[xeno-crm](https://github.com/gaayathri-code-monk/xeno-crm)** | Vite + vanilla JS frontend — AI Composer, Agent, live dashboard |
 | **[xeno-crm-backend](https://github.com/gaayathri-code-monk/xeno-crm-backend)** | Express CRM API — campaigns, segments, receipts webhook |
 | **[xeno-channel-service](https://github.com/gaayathri-code-monk/xeno-channel-service)** | Stub channel — simulates async delivery + fires callbacks |
 
-```mermaid
+```
 flowchart TB
     subgraph FE["🖥️  Frontend  (xeno-crm · Vite)"]
         direction TB
@@ -103,7 +103,7 @@ flowchart TB
     subgraph CH["📡  Channel Service  (xeno-channel-service · Express :4000)"]
         direction TB
         SEND["/send  →  202 Accepted"]
-        SIM["simulate.js\nper-channel delivery profiles\nWhatsApp 95% · SMS 88%\nEmail 82% · RCS 79%"]
+        SIM["simulate.js — per-channel delivery profiles\nWhatsApp 95% · SMS 88% · Email 82% · RCS 79%"]
     end
 
     subgraph AI["🤖  Anthropic Claude"]
@@ -113,9 +113,8 @@ flowchart TB
     FE -->|"REST API calls"| BE
     CAMP -->|"POST /send\n{ commId, channel, recipient, message, callbackUrl }"| SEND
     SEND --> SIM
-    SIM -->|"POST /api/receipts\n{ commId, status }\nasync · per-event · retried"| REC
+    SIM -->|"POST /api/receipts\n{ commId, status } — async, per-event, retried"| REC
     REC -->|"dedup Set + state update"| CAMP
-
     Composer & Agent <-->|"fetch (browser)"| CLAUDE
 
     style FE fill:#1a1040,stroke:#8B5CF6,color:#e2e8f0
@@ -137,6 +136,27 @@ flowchart TB
 
 ---
 
+## Architecture Decisions & Tradeoffs
+
+**What I chose not to build (and why):**
+
+- No persistence — in-memory state is right for this scope. At production scale: PostgreSQL for customers/campaigns, Redis for receipt dedup and real-time stats
+- No auth — out of scope for a demo CRM. At scale: JWT with role-based access (marketer vs admin)
+- No retries on the frontend — the channel service handles retry simulation. At scale: exponential backoff with dead-letter queue
+- No real messaging provider — the stub models the contract correctly (async callbacks, per-event status). Swapping in Twilio or Gupshup is a one-line change in channelService.js
+
+---
+
+## Tech Stack
+
+- **Vite** — build tool and dev server
+- **Vanilla JS (ES Modules)** — no framework overhead, clean module separation
+- **Chart.js** — channel delivery and revenue charts
+- **Anthropic claude-sonnet-4-6** — AI message composition and agent
+- **Inter** — typography
+
+---
+
 ## Deployment
 
 ```bash
@@ -146,14 +166,3 @@ npm run build
 
 ---
 
-## Tech Stack
-
-- **Vite** — build tool and dev server
-- **Vanilla JS (ES Modules)** — no framework overhead
-- **Chart.js** — channel delivery and revenue charts
-- **Anthropic claude-sonnet-4-6** — AI message composition and agent
-- **Inter** — typography
-
----
-
-*Built by Jagadeesh Muralidharan for the Xeno FDE Assignment, June 2026*
